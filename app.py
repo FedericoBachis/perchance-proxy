@@ -5,7 +5,6 @@ import time
 
 app = Flask(__name__)
 CORS(app)
-
 @app.route("/getkey")
 def get_key():
     with sync_playwright() as p:
@@ -18,11 +17,45 @@ def get_key():
         )
         page = context.new_page()
         
+        user_key = ""
+        
         try:
-            page.goto("https://perchance.org/5he1ivtfwh", wait_until="networkidle", timeout=60000)
-            time.sleep(15)  # più tempo per Turnstile
+            # Intercetta le richieste di rete per catturare il userKey
+            captured = {}
             
-            # Dump completo del localStorage per vedere cosa c'è
+            def handle_request(request):
+                if "checkUserVerificationStatus" in request.url:
+                    print("Trovata richiesta verifica:", request.url)
+                    # Estrai userKey dall'URL
+                    for param in request.url.split("&"):
+                        if param.startswith("userKey="):
+                            captured["userKey"] = param.split("=")[1]
+                            print("userKey catturato:", captured["userKey"])
+
+            def handle_response(response):
+                if "verifyUser" in response.url:
+                    try:
+                        body = response.text()
+                        print("verifyUser risposta:", body)
+                        if "token" in response.url:
+                            # Estrai token dall'URL
+                            for param in response.url.split("&"):
+                                if "token=" in param:
+                                    captured["token"] = param.split("=")[1]
+                    except:
+                        pass
+
+            page.on("request", handle_request)
+            page.on("response", handle_response)
+
+            # Carica prima la pagina principale per ottenere cf_clearance
+            page.goto("https://perchance.org/5he1ivtfwh", wait_until="networkidle", timeout=60000)
+            time.sleep(5)
+            
+            # Poi carica l'embed dove viene generato il userKey
+            page.goto("https://image-generation.perchance.org/embed", wait_until="networkidle", timeout=60000)
+            time.sleep(15)
+            
             all_storage = page.evaluate("""
                 () => {
                     let items = {};
@@ -34,18 +67,12 @@ def get_key():
                 }
             """)
             
-            print("LocalStorage completo:", all_storage)
+            print("LocalStorage embed:", all_storage)
+            print("Captured:", captured)
             
-            # Cerca userKey con nomi alternativi
-            user_key = (
-                all_storage.get("userKey") or
-                all_storage.get("user_key") or
-                all_storage.get("uk") or
-                ""
-            )
+            user_key = captured.get("userKey", "")
             
             cookies = context.cookies()
-            print("Cookies:", [c["name"] for c in cookies])
             cf = next((c["value"] for c in cookies if c["name"] == "cf_clearance"), "")
             
         except Exception as e:
@@ -55,12 +82,11 @@ def get_key():
         
         browser.close()
         
-        # Ritorna tutto per debug
         return jsonify({
             "userKey": user_key,
             "cfClearance": cf,
             "allStorage": all_storage,
-            "cookies": [c["name"] for c in cookies]
+            "captured": captured
         })
 @app.route("/health")
 def health():
