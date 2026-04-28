@@ -2,9 +2,23 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 from playwright.sync_api import sync_playwright
 import time
+import sys
+import os
+import re
+
+os.environ["PYTHONUNBUFFERED"] = "1"
 
 app = Flask(__name__)
 CORS(app)
+
+def log(msg):
+    print(msg, flush=True)
+    sys.stdout.flush()
+
+@app.route("/health")
+def health():
+    return jsonify({"status": "ok"})
+
 @app.route("/getkey")
 def get_key():
     with sync_playwright() as p:
@@ -22,42 +36,45 @@ def get_key():
 
             def handle_response(response):
                 try:
-                    if "verifyUser" in response.url:
-                        print("verifyUser URL:", response.url)
+                    url = response.url
+                    if "verifyUser" in url or "checkUser" in url or "userKey" in url:
+                        log(f"📡 Response intercettata: {url}")
                         body = response.text()
-                        print("verifyUser body:", body)
-                        # La risposta dovrebbe contenere il userKey
+                        log(f"📄 Body: {body[:200]}")
                         if "userKey" in body:
-                            import re
                             match = re.search(r'"userKey"\s*:\s*"([^"]+)"', body)
                             if match:
                                 captured["userKey"] = match.group(1)
-                                print("✅ userKey catturato:", captured["userKey"])
-                    
-                    if "checkUserVerificationStatus" in response.url:
-                        print("checkUserVerification URL:", response.url)
-                        body = response.text()
-                        print("checkUserVerification body:", body)
-
+                                log(f"✅ userKey: {captured['userKey']}")
                 except Exception as e:
-                    print("Errore handler:", e)
+                    log(f"Handler error: {e}")
+
+            def handle_request(req):
+                url = req.url
+                if "verifyUser" in url or "checkUser" in url or "image-generation" in url:
+                    log(f"➡️ Request: {url[:150]}")
 
             page.on("response", handle_response)
+            page.on("request", handle_request)
 
+            log("🌐 Carico pagina...")
             page.goto("https://perchance.org/5he1ivtfwh", timeout=60000)
-            
-            # Aspetta fino a 45 secondi
+            log("✅ Pagina caricata")
+
             for i in range(45):
                 if captured.get("userKey"):
-                    print(f"✅ userKey trovato dopo {i}s")
+                    log(f"✅ Done in {i}s")
                     break
+                if i % 5 == 0:
+                    log(f"⏳ Attendo... {i}s")
                 time.sleep(1)
 
             cookies = context.cookies()
             cf = next((c["value"] for c in cookies if c["name"] == "cf_clearance"), "")
+            log(f"🍪 cf_clearance: {'trovato' if cf else 'NON trovato'}")
 
         except Exception as e:
-            print("Errore:", str(e))
+            log(f"❌ Errore: {str(e)}")
             browser.close()
             return jsonify({"error": str(e)}), 500
 
@@ -68,9 +85,6 @@ def get_key():
             "cfClearance": cf,
             "captured": captured
         })
-@app.route("/health")
-def health():
-    return jsonify({"status": "ok"})
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
