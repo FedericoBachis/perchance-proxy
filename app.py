@@ -1,3 +1,11 @@
+from flask import Flask, jsonify
+from flask_cors import CORS
+from playwright.sync_api import sync_playwright
+import time
+
+app = Flask(__name__)
+CORS(app)
+
 @app.route("/getkey")
 def get_key():
     with sync_playwright() as p:
@@ -54,3 +62,9 @@ def get_key():
             "allStorage": all_storage,
             "cookies": [c["name"] for c in cookies]
         })
+@app.route("/health")
+def health():
+    return jsonify({"status": "ok"})
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
