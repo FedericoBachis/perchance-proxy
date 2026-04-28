@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: perchance-proxy
+    runtime: python
+    buildCommand: pip install -r requirements.txt && playwright install chromium && playwright install-deps chromium
+    startCommand: python app.py
+    plan: free
