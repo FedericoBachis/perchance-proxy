@@ -20,22 +20,36 @@ def get_key():
         try:
             captured = {}
 
-            def handle_request(request):
-                if "checkUserVerificationStatus" in request.url:
-                    print("TROVATO checkUserVerificationStatus:", request.url)
-                    for param in request.url.split("&"):
-                        if "userKey=" in param:
-                            captured["userKey"] = param.split("=")[1]
+            def handle_response(response):
+                try:
+                    if "verifyUser" in response.url:
+                        print("verifyUser URL:", response.url)
+                        body = response.text()
+                        print("verifyUser body:", body)
+                        # La risposta dovrebbe contenere il userKey
+                        if "userKey" in body:
+                            import re
+                            match = re.search(r'"userKey"\s*:\s*"([^"]+)"', body)
+                            if match:
+                                captured["userKey"] = match.group(1)
+                                print("✅ userKey catturato:", captured["userKey"])
+                    
+                    if "checkUserVerificationStatus" in response.url:
+                        print("checkUserVerification URL:", response.url)
+                        body = response.text()
+                        print("checkUserVerification body:", body)
 
-            page.on("request", handle_request)
+                except Exception as e:
+                    print("Errore handler:", e)
 
-            # Carica la pagina e aspetta che appaia la richiesta
+            page.on("response", handle_response)
+
             page.goto("https://perchance.org/5he1ivtfwh", timeout=60000)
             
-            # Aspetta fino a 30 secondi che il userKey venga catturato
-            for i in range(30):
+            # Aspetta fino a 45 secondi
+            for i in range(45):
                 if captured.get("userKey"):
-                    print(f"userKey trovato dopo {i}s")
+                    print(f"✅ userKey trovato dopo {i}s")
                     break
                 time.sleep(1)
 
@@ -51,7 +65,8 @@ def get_key():
 
         return jsonify({
             "userKey": captured.get("userKey", ""),
-            "cfClearance": cf
+            "cfClearance": cf,
+            "captured": captured
         })
 @app.route("/health")
 def health():
